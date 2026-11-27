@@ -1,15 +1,4 @@
-"""
-rg-eyeq-verify (Kaggle, CPU only, ~15 min). Is an EyeQ quality label really attached to the right PICTURE
-in the hi-res EyePACS mirror we use? Verification only; opens dev + rest patients, never test patients.
 
-  1. names   : every EyeQ name of a dev/rest patient exists in both mirrors
-  2. labels  : the DR grade stored in EyeQ equals EyePACS trainLabels.csv for the same name
-  3. pictures: the same name shows the same eye in both mirrors (two independent uploads of EyePACS).
-               Each hi-res thumbnail must find its own low-res namesake as best match among 400 candidates
-  4. meaning : Reject images should be measurably worse (darker / less sharp) than Good ones
-  5. gallery : 10 Good / Usable / Reject examples to look at (private, gitignored)
-Output: eyeq_verify_summary.json, gallery/eyeq_*.png
-"""
 import glob
 import hashlib
 import json
