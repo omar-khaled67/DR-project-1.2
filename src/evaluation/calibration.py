@@ -1,18 +1,3 @@
-"""
-Step 4: confidence calibration, the sight-threatening alarm, and the "needs human review" rule.
-Local, CPU, predictions only. NOT a test split: the fitted data are the APTOS out-of-fold (OOF) CV
-predictions, and EyePACS DEV patients are used as an external check (dev is where the frozen
-thresholds were set, never test data).
-
-    python src/evaluation/calibration.py --runs kaggle/runs
-
-Data
-  fit   : APTOS OOF, mixed 384px, seed 42, 5 folds (each image scored by the fold model that did not train on it)
-  check : EyePACS dev, the deployed full-pool model's own predictions (kaggle/runs/rg-final-model)
-
-Temperature scaling: p_T(k) is proportional to p(k)^(1/T). It never changes the predicted grade.
-The referral flags use the raw probabilities (frozen thresholds): calibration only changes the displayed confidence.
-"""
 from __future__ import annotations
 
 import argparse
@@ -31,7 +16,6 @@ N_BINS = 15
 ST_FROZEN, REF_FROZEN = 0.0277, 0.3269
 
 
-# ----------------------------------------------------------------------------- calibration
 def apply_temperature(p, T):
     q = np.clip(np.asarray(p, np.float64), EPS, 1) ** (1.0 / T)
     return q / q.sum(axis=-1, keepdims=True)
@@ -74,7 +58,6 @@ def brier(p, y):
 
 
 def crossfit_temperature(p, y, fold):
-    """Probabilities calibrated with the temperature of the OTHER folds."""
     out, Ts = np.zeros_like(p), {}
     for f in np.unique(fold):
         T = fit_temperature(p[fold != f], y[fold != f])
@@ -83,12 +66,11 @@ def crossfit_temperature(p, y, fold):
 
 
 def crossfit_isotonic(p, y, fold):
-    """Isotonic map of the top-class confidence (fitted on the other folds); the predicted grade is unchanged."""
     from sklearn.isotonic import IsotonicRegression
     conf, ok, out = p.max(1), (p.argmax(1) == y).astype(float), np.zeros(len(y))
     for f in np.unique(fold):
         ir = IsotonicRegression(out_of_bounds="clip", y_min=0, y_max=1).fit(conf[fold != f], ok[fold != f])
-        out[fold == f] = ir.predict(conf[fold == f])
+        out[fold == f] = ir.predict(conf[fold != f])
     return out
 
 
@@ -103,7 +85,6 @@ def boot_ci(fn, n, n_boot=1000, seed=0, groups=None):
     return float(np.percentile(v, 2.5)), float(np.percentile(v, 97.5))
 
 
-# ----------------------------------------------------------------------------- referral alarms
 def alarm_row(y, score, t, k):
     yb, pos = y >= k, score >= t
     tp, fp = int((pos & yb).sum()), int((pos & ~yb).sum())
@@ -117,9 +98,7 @@ def threshold_at_spec(score_neg, spec):
     return float(np.nextafter(s[min(int(np.ceil(spec * len(s))) - 1, len(s) - 1)], np.inf))
 
 
-# ----------------------------------------------------------------------------- "needs human review"
 def review_scores(p, p_ref_threshold=REF_FROZEN):
-    """Higher = more reason to ask a human. Each is a simple, explainable quantity."""
     conf = np.sort(p, axis=1)
     ent = -(np.clip(p, EPS, 1) * np.log(np.clip(p, EPS, 1))).sum(1) / np.log(p.shape[1])
     ref = p[:, 2:].sum(1)
@@ -128,7 +107,6 @@ def review_scores(p, p_ref_threshold=REF_FROZEN):
 
 
 def coverage_table(score, y, p, p_ref_threshold=REF_FROZEN, st_threshold=ST_FROZEN, coverages=(1.0, 0.9, 0.8, 0.7)):
-    """Send the (1 - coverage) share with the highest review score to a human; what is left is automatic."""
     pred, ref, st = p.argmax(1), p[:, 2:].sum(1) >= p_ref_threshold, p[:, 3:].sum(1) >= st_threshold
     order, rows = np.argsort(score, kind="stable"), []
     for c in coverages:
@@ -146,7 +124,6 @@ def coverage_table(score, y, p, p_ref_threshold=REF_FROZEN, st_threshold=ST_FROZ
     return rows
 
 
-# ----------------------------------------------------------------------------- data + report
 def load_data(runs):
     a = load_oof(runs, "B", 42, suffix="_mix", img=384)
     z = np.load(glob.glob(os.path.join(runs, "rg-final-model", "B_full_s42_384_mix", "eyepacs_dev_preds.npz"))[0])
@@ -155,7 +132,6 @@ def load_data(runs):
 
 
 def write_figures(rep, folder):
-    """Reliability plots + Markdown tables (docs/figures/calibration). Contains no images of patients."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -210,7 +186,6 @@ def main(argv=None):
     oof, dev = load_data(a.runs)
     rep = {"n_oof": int(len(oof["y"])), "n_dev": int(len(dev["y"]))}
 
-    # 1. temperature
     T = fit_temperature(oof["p"], oof["y"])
     cal, Ts = crossfit_temperature(oof["p"], oof["y"], oof["fold"])
     iso = crossfit_isotonic(oof["p"], oof["y"], oof["fold"])
@@ -233,7 +208,6 @@ def main(argv=None):
     rep["reliability"] = {"oof_raw": reliability_points(oof["p"], oof["y"]), "oof_cal": reliability_points(cal, oof["y"]),
                           "dev_raw": reliability_points(dev["p"], dev["y"]), "dev_cal": reliability_points(dev_cal, dev["y"])}
 
-    # 2. alarms: sight-threatening (grade >= 3) and referable (>= 2) at several thresholds, raw and calibrated probabilities
     rep["alarms"] = {}
     for dsname, d, cali in (("APTOS OOF", oof, cal), ("EyePACS dev", dev, dev_cal)):
         for kname, k, frozen in (("sight-threatening", 3, ST_FROZEN), ("referable", 2, REF_FROZEN)):
@@ -244,7 +218,6 @@ def main(argv=None):
                       ("spec 0.975", threshold_at_spec(neg, 0.975)), ("0.10", 0.10), ("0.20", 0.20), ("0.30", 0.30), ("0.50", 0.50)]
                 rep["alarms"][f"{dsname} | {kname} | {pname}"] = {n_: alarm_row(d["y"], s, t, k) for n_, t in ts}
 
-    # 3. review rule on OOF, checked on dev
     rep["review"] = {}
     for dsname, d in (("APTOS OOF", oof), ("EyePACS dev", dev)):
         rep["review"][dsname] = {r: coverage_table(s, d["y"], d["p"]) for r, s in review_scores(d["p"]).items()}
