@@ -1,22 +1,4 @@
-"""
-rg-eyepacs-data (Kaggle, CPU only, ~1 h). EyePACS images for MIXED training (APTOS + EyePACS).
 
-Patient-level split (identical rule to rg-eyepacs-dev, fixed forever):
-    u = sha256("eyepacs-split-v1:<patient>")  -> dev (<0.10) / test (0.10-0.20) / rest (>=0.20)
-Within REST (only these may be used for training or model selection):
-    u2 = sha256("eyepacs-rest-v1:<patient>") < 0.06  -> "rval"   (epoch selection slice; all its images)
-    otherwise                                          -> "rtrain" (training pool)
-    rtrain keeps every DR image (grade >= 1) and the grade-0 images whose
-    sha256("eyepacs-g0-v1:<image>") < 0.30 (a fixed 30% sample - keeps disk and CPU time down)
-TEST patients are never opened. DEV patients are preprocessed only to be SCORED (never used to
-select anything) so the pilot can be compared with the APTOS-only models on the same images.
-
-Images: hi-res mirror (tanlikesmath, ~1024px, aspect kept) -> frozen preprocess_rgb at IMG (384).
-Outputs (private kernel output, consumed via kernel_sources):
-    eyepacs_rest_u8.npy + eyepacs_rest_meta.csv   (stem, patient, grade, part, quality)
-    eyepacs_dev_u8.npy  + eyepacs_dev_meta.csv    (stem, patient, grade, quality)
-    eyepacs_data_summary.json (small)
-"""
 import glob
 import hashlib
 import json
@@ -30,7 +12,7 @@ from multiprocessing import Pool
 import numpy as np
 import pandas as pd
 
-CONFIG = {}  # <- injected by make_kernel.py
+CONFIG = {}  
 
 OUT, INPUT = "/kaggle/working", "/kaggle/input"
 IMG = int(CONFIG.get("img", 384))
@@ -59,7 +41,7 @@ def u(key: str) -> float:
     return int(hashlib.sha256(key.encode()).hexdigest()[:15], 16) / 16 ** 15
 
 
-def split_of(patient: str) -> str:          # MUST match kaggle/kernels/rg_eyepacs_dev.py
+def split_of(patient: str) -> str:        
     x = u(f"eyepacs-split-v1:{patient}")
     return "dev" if x < 0.10 else ("test" if x < 0.20 else "rest")
 
@@ -92,7 +74,7 @@ if __name__ == "__main__":
     lab["grade"] = lab.level.astype(int)
     lab["split"] = lab.patient.map(split_of)
 
-    # cross-check with the split file written by rg-eyepacs-dev (same rule -> must be identical)
+
     prev = D.find_file("eyepacs_split.csv", required=False)
     if prev:
         p = pd.read_csv(prev, dtype={"patient": str})
