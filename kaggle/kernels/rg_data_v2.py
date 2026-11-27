@@ -1,18 +1,4 @@
-"""
-rg-data-v2 (Kaggle, CPU, ~0.5 h). Raw APTOS -> preprocess_rgb (frozen contract) -> uint8 memmap + meta,
-with the v2 split design. Also preprocesses IDRiD grading images as an external test set.
 
-Inputs : APTOS competition, rg-recon output (xval_map.csv, dup_groups.csv), IDRiD, retinograde-code.
-Outputs (stay on Kaggle, consumed by rg-train via kernel_sources):
-  aptos_v2_u8.npy, aptos_v2_meta.csv            (~0.55 GB)
-  idrid_u8.npy, idrid_meta.csv                  (516 grading imgs, external test; never used for training)
-  data_v2_summary.json                          (small -> downloaded)
-
-Split design (docs/experiments.md):
-  test    = the 733 old-val ids (only images v1 never trained on) -> touched once, Phase 3
-  dropped = train images in a near-duplicate group that also has a test member (leak guard)
-  train   = the rest, 5-fold StratifiedGroupKFold (groups = dup_group, seed 42)
-"""
 import glob
 import hashlib
 import json
