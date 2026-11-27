@@ -1,23 +1,4 @@
-"""
-rg-eyepacs-dev (Kaggle, CPU only, ~40 min). Headroom check item 4: prediction-only domain-gap check.
 
-EyePACS 2015 train set (35,126 images, 17,563 patients) -> patient-level split, fixed forever:
-    u = sha256("eyepacs-split-v1:<patient>") as a number in [0, 1)
-    dev  : u < 0.10          (scored here)
-    test : 0.10 <= u < 0.20  (listed by id only - images are NEVER opened; final evaluation, once)
-    rest : unused (reserved, e.g. for future EyePACS pretraining)
-Both eyes of a patient are always in the same split.
-
-Scoring: the 5 fold models of B seed 42 (224px), and the 2 fold models of the 384px pilot, each
-loaded as saved (src/model_io.py; verified to match GPU predictions on CPU). Frozen preprocess_rgb contract.
-Two mirrors of the same images are scored at 224px to separate "population gap" from "mirror gap":
-    hires : tanlikesmath/diabetic-retinopathy-resized  (resized_train, ~1024px wide, aspect kept)
-    lowres: sovitrath/...-colored-resized              (already squeezed to 224x224 by the mirror)
-EyeQ quality labels (Good/Usable/Reject) are attached where available (rg-recon eyeq_mapping.csv).
-
-Outputs (small): eyepacs_split.csv (patient -> split; ids only), eyepacs_dev_preds.npz,
-                 eyepacs_dev_summary.json
-"""
 import glob
 import hashlib
 import json
